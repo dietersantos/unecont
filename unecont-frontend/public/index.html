@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Notas Fiscais</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+</head>
+
+<body class="bg-light p-4">
+  <div class="container">
+    <h2 class="mb-4">Cadastro de Notas Fiscais</h2>
+
+    <!-- Formulário -->
+    <form id="notaForm" class="row g-3 mb-4">
+      <input type="hidden" id="index">
+      <div class="col-md-3">
+        <label for="numero" class="form-label">Número da Nota</label>
+        <input type="text" class="form-control" id="numero" required>
+      </div>
+      <div class="col-md-3">
+        <label for="cliente" class="form-label">Cliente</label>
+        <input type="text" class="form-control" id="cliente" required>
+      </div>
+      <div class="col-md-3">
+        <label for="valor" class="form-label">Valor</label>
+        <input type="number" class="form-control" id="valor" step="0.01" min="0.01" required>
+      </div>
+      <div class="col-md-3">
+        <label for="data" class="form-label">Data de Emissão</label>
+        <input type="date" class="form-control" id="data" required>
+      </div>
+      <div class="col-12">
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <button type="reset" class="btn btn-secondary">Limpar</button>
+      </div>
+    </form>
+
+    <!-- Tabela -->
+    <table id="notasTable" class="table table-striped table-bordered"></table>
+  </div>
+
+  <!-- Modal de Login -->
+  <div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <form id="loginForm" class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="loginModalLabel">Autenticação</h5>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="username" class="form-label">Usuário</label>
+            <input type="text" class="form-control" id="username" required>
+          </div>
+          <div class="mb-3">
+            <label for="password" class="form-label">Senha</label>
+            <input type="password" class="form-control" id="password" required>
+          </div>
+          <div id="loginError" class="text-danger d-none">Usuário ou senha inválidos.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Entrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+  <script>
+    let jwtToken = null;
+    const notas = [];
+    let table;
+
+    $(document).ready(() => {
+      // Mostra o modal de login ao iniciar
+      $('#loginModal').modal({ backdrop: 'static', keyboard: false });
+      $('#loginModal').modal('show');
+
+      $('#loginForm').on('submit', function (e) {
+        e.preventDefault();
+        const username = $('#username').val();
+        const password = $('#password').val();
+
+        $.ajax({
+          url: 'http://localhost:8080/token',
+          method: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ username, password }),
+          success: function (data) {
+            jwtToken = data;
+            $('#loginModal').modal('hide');
+            inicializarTabela();
+            configurarFormulario();
+            obtemRegistros();
+          },
+          error: function () {
+            $('#loginError').removeClass('d-none');
+          }
+        });
+      });
+    });
+
+    function inicializarTabela() {
+      table = $('#notasTable').DataTable({
+        columns: [
+          { title: 'Index' },
+          { title: 'Número da Nota' },
+          { title: 'Cliente' },
+          { title: 'Valor' },
+          { title: 'Data de Emissão' },
+          { title: 'Ações' }
+        ],
+        columnDefs: [
+          { targets: 0, visible: false, searchable: false, width: "0%" },
+          { targets: 1, width: "20%" },
+          { targets: 2, width: "40%" },
+          { targets: 3, width: "15%" },
+          { targets: 4, width: "15%" },
+          { targets: 5, width: "10%" }
+        ],
+        data: []
+      });
+    }
+
+    function obtemRegistros() {
+      $.ajax({
+        url: 'http://localhost:8080/notas',
+        method: 'GET',
+        dataType: 'json',
+        headers: jwtToken ? { 'Authorization': 'Bearer ' + jwtToken } : {},
+        success: function (data) {
+          data.forEach(nota => {
+            notas.push({
+              index: nota.index,
+              numero: nota.numero,
+              cliente: nota.cliente,
+              valor: nota.valor,
+              data: formatarDataISO(nota.emissao)
+            });
+          });
+          atualizarTabela();
+        },
+        error: function (xhr, status, error) {
+          console.error('Erro ao buscar notas:', error);
+        }
+      });
+    }
+
+    function configurarFormulario() {
+      $('#notaForm').on('submit', (e) => {
+        e.preventDefault();
+        const nota = obterDadosDoFormulario();
+
+        if (nota.index === '') {
+          nota.index = gerarIdUnico();
+          notas.push(nota);
+        } else {
+          atualizarNotaExistente(nota);
+        }
+
+        atualizarTabela();
+        limparFormulario();
+
+        $.ajax({
+          url: 'http://localhost:8080/notas',
+          method: 'POST',
+          contentType: 'application/json',
+          headers: jwtToken ? { 'Authorization': 'Bearer ' + jwtToken } : {},
+          data: JSON.stringify({
+            Index: nota.index,
+            Numero: nota.numero,
+            Cliente: nota.cliente,
+            Valor: nota.valor,
+            Emissao: nota.data
+          }),
+          success: function (response) {
+            console.log('Nota enviada com sucesso:', response);
+          },
+          error: function (xhr, status, error) {
+            console.error('Erro ao enviar nota:', error);
+          }
+        });
+      });
+    }
+
+    function obterDadosDoFormulario() {
+      return {
+        index: $('#index').val(),
+        numero: $('#numero').val(),
+        cliente: $('#cliente').val(),
+        valor: parseFloat($('#valor').val()).toFixed(2),
+        data: $('#data').val()
+      };
+    }
+
+    function gerarIdUnico() {
+      return crypto.randomUUID();
+    }
+
+    function atualizarNotaExistente(notaAtualizada) {
+      const index = notas.findIndex(nota => nota.index === notaAtualizada.index);
+      if (index !== -1) notas[index] = notaAtualizada;
+    }
+
+    function atualizarTabela() {
+      table.clear();
+      notas.forEach(nota => adicionarLinhaNaTabela(nota));
+      table.draw();
+    }
+
+    function adicionarLinhaNaTabela(nota) {
+      table.row.add([
+        nota.index,
+        nota.numero,
+        nota.cliente,
+        formatarValor(nota.valor),
+        formatarData(nota.data),
+        gerarBotaoEditar(nota.index)
+      ]);
+    }
+
+    function gerarBotaoEditar(index) {
+      return `<button class="btn btn-sm btn-warning" onclick="editarNota('${index}')">Editar</button>`;
+    }
+
+    function editarNota(index) {
+      const nota = notas.find(n => n.index === index);
+      if (!nota) return;
+
+      $('#index').val(nota.index);
+      $('#numero').val(nota.numero);
+      $('#cliente').val(nota.cliente);
+      $('#valor').val(nota.valor);
+      $('#data').val(nota.data);
+    }
+
+    function limparFormulario() {
+      $('#notaForm')[0].reset();
+      $('#index').val('');
+    }
+
+    function formatarData(isoDate) {
+      const [year, month, day] = isoDate.split("-");
+      return `${day}/${month}/${year}`;
+    }
+
+    function formatarDataISO(isoDate) {
+      if (!isoDate) return '';
+      const date = new Date(isoDate);
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${year}-${month}-${day}`;
+    }
+
+    function formatarValor(valor) {
+      return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+      }).format(valor);
+    }
+  </script>
+</body>
+
+</html>

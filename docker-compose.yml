@@ -1,0 +1,38 @@
+version: "3.9"  # optional since v1.27.0
+services:
+  unecont_backend:
+    container_name: unecont-backend
+    image: dietermarno/unecont-backend:latest
+    hostname: backend
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=https://+:8081;http://+:8080
+      - ASPNETCORE_HTTPS_PORT=8081
+      - ASPNETCORE_Kestrel__Certificates__Default__Password=R353t3282@
+      - ASPNETCORE_Kestrel__Certificates__Default__Path=aspnetapp.pfx
+    networks:
+      - dockerhost
+  unecont_frontend:
+    container_name: unecont-frontend
+    image: dietermarno/unecont-frontend:latest
+    hostname: frontend
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=https://+:8081;http://+:8080
+      - ASPNETCORE_HTTPS_PORT=8081
+      - ASPNETCORE_Kestrel__Certificates__Default__Password=R353t3282@
+      - ASPNETCORE_Kestrel__Certificates__Default__Path=aspnetapp.pfx
+    depends_on:
+      - unecont_backend
+    networks:
+      - dockerhost
+networks:
+  dockerhost:
+    driver: bridge
+    name: unecont
